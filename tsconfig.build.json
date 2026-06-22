@@ -1,0 +1,15 @@
+{
+  // Emit config: compiles ONLY src/ to dist/ as ESM + .d.ts. Excludes tests,
+  // the dev demo, and e2e so none of that ships in the installed package.
+  // Invoked by `npm run build`; CSS/fonts are copied alongside by copy-assets.mjs.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src"]
+}
