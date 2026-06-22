@@ -1,0 +1,58 @@
+/**
+ * fonts.css — self-hosted brand fonts (BRAND.md §2, SPEC §2).
+ *
+ * Why self-hosted (not Google Fonts / a CDN): every Weaverbit product then renders
+ * the IDENTICAL typeface with NO third-party request — a quiet GDPR win consistent
+ * with the cookieless posture (SYSTEM_DESIGN §7), and no external dependency at
+ * runtime. Files are vendored under ./files (latin subset, variable, woff2-only).
+ * Provenance + licenses: see src/fonts/README.md.
+ *
+ * Each face is a single VARIABLE woff2 covering its full weight axis, so one request
+ * per family serves every weight. font-display: swap keeps text visible while loading.
+ */
+
+/* Headings — Space Grotesk (weight axis 300–700). */
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 300 700;
+  src: url('./files/space-grotesk-latin-wght-normal.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Body — Inter (weight axis 100–900), upright + a real italic for prose emphasis. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('./files/inter-latin-wght-normal.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: italic;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('./files/inter-latin-wght-italic.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Technical / mono — JetBrains Mono (weight axis 100–800). The signature face. */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url('./files/jetbrains-mono-latin-wght-normal.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
