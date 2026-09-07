@@ -116,7 +116,22 @@ src/
 ```
 - Same principle: HTTP handlers are thin; domain logic is feature-grouped; `lib/` is infra/clients only.
 
-**The invariant across all archetypes:** routing/entry layer is thin → features hold the capability → `lib/` holds shared infra → brand comes from `weaverbit-core`. If a new archetype appears, it extends this spine; it does not replace it. Adding an archetype is a deliberate revision to this doc (PROCESS.md §8).
+### 4.4 Shared package (e.g. weaverbit-core) — an installable library, not an app
+This is different from the others: it is **not a website or a service that runs on its own**. It is a box of shared parts (design tokens, fonts, common UI pieces) that *other* Weaverbit products install and use. Nobody visits it.
+```
+src/
+├── tokens/                    # the design tokens (colors per mode, spacing, type) — the single source of truth
+├── styles/                    # the CSS that wires tokens up, plus the mode-switching setup
+├── fonts/                     # the self-hosted font files
+├── components/                # the shared UI pieces (Nav, Footer, StatusTag, etc.) — feature-first if any grow large
+└── index.ts                   # the public list of what other products are allowed to import
+```
+- Because it is a package, it has **no `app/`, no routes, no pages** — there is nothing to visit.
+- Its job is to be installed by other products (from GitHub) and to hand them the brand with zero local restyling.
+- The same spirit still holds: keep a clear public entry point (`index.ts`), keep things lean, and ship only shared pieces — never product-specific logic.
+- A product installs this package and is then *not allowed* to redefine fonts, colors, or modes locally; it uses what this package provides (see `BRAND.md`).
+
+**The invariant across all archetypes:** routing/entry layer is thin → features hold the capability → `lib/` holds shared infra → brand comes from `weaverbit-core` (except in `weaverbit-core` itself, which *is* the brand). If a new archetype appears, it extends this spine; it does not replace it. Adding an archetype is a deliberate revision to this doc (PROCESS.md §8).
 
 ---
 
@@ -148,3 +163,4 @@ Green gates are necessary, not sufficient — Aditya's review is the final struc
 
 ## Changelog
 - **0.1 — <date>** — First pass. Hybrid feature-first, graduation rule (hard), shared spine + per-archetype extensions, naming, reviewer enforcement. To be revised as real products (starting with the weaverbit.com rebuild) exercise it.
+- **0.2 — <date>** — Added a fourth archetype: "shared package" (§4.4), for installable libraries like weaverbit-core that other products consume. Added because building weaverbit-core revealed the rulebook had no layout for a package (not an app or service).

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>weaverbit-core — local demo</title>
+    <!--
+      No-flash mode script. Mirrors the exported `noFlashScript` (src/mode/no-flash-script.ts)
+      so the demo behaves like a real consumer: the stored mode is applied before first paint.
+    -->
+    <script>
+      (function () {
+        try {
+          var m = sessionStorage.getItem('wb-mode');
+          var ok = { light: 1, dark: 1, 'high-contrast': 1, dim: 1 };
+          if (m && ok[m] === 1) {
+            document.documentElement.setAttribute('data-mode', m);
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

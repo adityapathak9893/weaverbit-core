@@ -1,0 +1,41 @@
+{
+  // Base config used by the editor and the `typecheck` gate (tsc --noEmit).
+  // It type-checks EVERYTHING (src + tests + e2e + dev demo + root configs).
+  // The narrower tsconfig.build.json (extends this) is what actually emits dist/.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+
+    // Strictness: this repo is a public hiring artifact — no escape hatches.
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+
+    // Clean ESM emit: force explicit `import type` and one-module-per-file semantics
+    // so the shipped output is unambiguous for bundler consumers (Next.js / Vite).
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "noEmit": true
+  },
+  "include": [
+    "src",
+    "tests",
+    "e2e",
+    "dev",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "vitest.setup.ts",
+    "playwright.config.ts"
+  ]
+}

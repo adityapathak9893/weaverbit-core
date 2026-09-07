@@ -1,0 +1,41 @@
+/**
+ * base.css — minimal, LOW-SPECIFICITY brand baseline. Importing the stylesheet
+ * gives a product the right background, text colour, font, a soft mode cross-fade,
+ * visible keyboard focus, and reduced-motion support — with zero local restyling
+ * (the package's whole promise). Every rule uses :where() so its specificity is 0
+ * and a product can override any of it without !important. (DESIGN_GUIDE §6–7.)
+ */
+
+:where(html) {
+  font-family: var(--wb-font-body);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+:where(body) {
+  margin: 0;
+  background-color: var(--wb-bg);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-body);
+  font-weight: var(--wb-weight-body);
+  line-height: var(--wb-leading-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Soft colour cross-fade when the mode changes (BRAND.md §1: calm, not flashy). */
+  transition:
+    background-color var(--wb-transition-mode),
+    color var(--wb-transition-mode);
+}
+
+/* Always-visible keyboard focus (accessibility floor, DESIGN_GUIDE §7). */
+:where(:focus-visible) {
+  outline: 2px solid var(--wb-accent);
+  outline-offset: 2px;
+}
+
+/* Honour "reduce motion": disable the mode cross-fade entirely. */
+@media (prefers-reduced-motion: reduce) {
+  :where(body) {
+    transition: none;
+  }
+}

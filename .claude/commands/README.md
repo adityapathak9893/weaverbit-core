@@ -7,8 +7,9 @@
 ### `/review` → `review.md`
 Runs a fresh-context critique of the current diff before a PR: shows the changes, hands them to the `code-reviewer` subagent, and reports findings by severity. Won't open the PR until blockers are resolved.
 
-### `/new-post` → `new-post.md`
-Scaffolds a new blog post: creates `content/blog/<slug>.mdx` with correct frontmatter and a skeleton. Locked to `published: false` so nothing goes live by accident. Usage: `/new-post My Post Title`.
+> The harness template also ships a `/new-post` (blog scaffold) command. It was **removed in
+> weaverbit-core** — this is a shared package, not a content site, so it has no blog. Products
+> that have a blog (e.g. weaverbit.com) keep it.
 
 ## File format
 Each command is a Markdown file. The filename (minus `.md`) is the command name. Optional YAML frontmatter:

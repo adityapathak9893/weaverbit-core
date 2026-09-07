@@ -1,0 +1,154 @@
+/**
+ * tokens.css — THE single source of truth for weaverbit-core design tokens.
+ *
+ * Encodes BRAND.md and docs/DESIGN_GUIDE.md as named, semantic CSS custom
+ * properties. Components and products reference role names (e.g. var(--wb-ink)) —
+ * NEVER raw hex. Changing a value here changes every consuming product. (SPEC §3, §6.)
+ *
+ * Modes (BRAND.md §4b, SPEC §4):
+ *  - Light is the base palette, declared on :root.
+ *  - System-auto = NO explicit choice → follows the device via prefers-color-scheme
+ *    (Light or Dark). This works with zero JavaScript, so a no-JS visitor still gets
+ *    a sensible theme and there is no flash. (See src/mode/.)
+ *  - Light / Dark / High-contrast / Dim are applied explicitly by setting
+ *    [data-mode] on <html>. An explicit choice always wins over the device default.
+ *
+ * Contrast: all text pairs meet WCAG AA (4.5:1) in every mode; High-contrast aims
+ * higher. Several LIGHT and one DIM value were darkened/lightened from the SPEC's
+ * first-pass values to clear AA while keeping their hue — only luminance shifts, so
+ * the brand identity is unchanged (BRAND.md §4b). See docs/DESIGN_GUIDE.md §2.3 and
+ * the enforced gate in tests/tokens-contrast.test.ts. Adjustments are flagged inline.
+ */
+
+:root {
+  /* ───── Typography — mode-independent (BRAND.md §2) ───── */
+  --wb-font-display:
+    'Space Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --wb-font-body: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --wb-font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
+
+  --wb-weight-body: 400;
+  --wb-weight-medium: 500;
+  --wb-weight-heading: 500; /* headings: medium weight, tight tracking (BRAND.md §2) */
+  --wb-weight-bold: 700;
+
+  --wb-tracking-heading: -0.015em;
+  --wb-tracking-label: 0.08em; /* mono UPPERCASE labels — the signature (BRAND.md §4) */
+  --wb-leading-body: 1.6; /* comfortable reading measure */
+  --wb-leading-heading: 1.15;
+
+  /* Modular type scale (rem) — calm, not shouty (DESIGN_GUIDE §2.2). */
+  --wb-text-xs: 0.8125rem;
+  --wb-text-sm: 0.875rem;
+  --wb-text-base: 1rem;
+  --wb-text-lg: 1.125rem;
+  --wb-text-xl: 1.375rem;
+  --wb-text-2xl: 1.75rem;
+  --wb-text-3xl: 2.25rem;
+
+  /* ───── Spacing — mode-independent, 4px base (DESIGN_GUIDE §2.2) ───── */
+  --wb-space-1: 0.25rem;
+  --wb-space-2: 0.5rem;
+  --wb-space-3: 0.75rem;
+  --wb-space-4: 1rem;
+  --wb-space-6: 1.5rem;
+  --wb-space-8: 2rem;
+  --wb-space-12: 3rem;
+  --wb-space-16: 4rem;
+
+  /* ───── Radius & hairline ───── */
+  --wb-radius-sm: 4px;
+  --wb-radius-md: 8px;
+  --wb-radius-full: 999px;
+  --wb-hairline: 1px;
+
+  /* ───── Motion ───── */
+  --wb-transition-mode: 200ms ease; /* soft cross-fade when switching modes (disabled under reduced-motion) */
+
+  /* ───── Color: LIGHT — the calm default (DESIGN_GUIDE §2.1) ───── */
+  color-scheme: light;
+  --wb-bg: #fbfbfa;
+  --wb-surface: #ffffff;
+  --wb-border: #e6e6e3;
+  --wb-ink: #16161a;
+  --wb-ink-soft: #55555e;
+  --wb-ink-faint: #73737c; /* AA-adjusted from SPEC #8A8A93 (was 3.3:1) */
+  --wb-accent: #0d8181; /* AA-adjusted from SPEC #0E8C8C (was 3.9:1) — links are text */
+  --wb-accent-soft: #e2f2f2; /* faint wash; background only */
+  --wb-positive: #1a8359; /* AA-adjusted from SPEC #1F9D6B */
+  --wb-warning: #946d22; /* AA-adjusted from SPEC #B5852A */
+}
+
+/*
+ * System-auto on a dark device. Applies ONLY when no explicit mode is set (or the
+ * stored choice is the literal 'system'). The Dark palette is intentionally repeated
+ * in :root[data-mode='dark'] below — CSS cannot share one declaration block across a
+ * media query and a plain selector, and keeping both explicit is clearer than a hack.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-mode]),
+  :root[data-mode='system'] {
+    color-scheme: dark;
+    --wb-bg: #0e0f10;
+    --wb-surface: #16181a;
+    --wb-border: #2a2d30;
+    --wb-ink: #f1f2f0;
+    --wb-ink-soft: #afb3b0;
+    --wb-ink-faint: #7e827f; /* AA-adjusted from SPEC #7C807D for surface contrast */
+    --wb-accent: #3bb6b6;
+    --wb-accent-soft: #16302f;
+    --wb-positive: #34c98a;
+    --wb-warning: #d2a24a;
+  }
+}
+
+/* Explicit Dark (chosen even on a light device). Mirrors the auto-dark palette above. */
+:root[data-mode='dark'] {
+  color-scheme: dark;
+  --wb-bg: #0e0f10;
+  --wb-surface: #16181a;
+  --wb-border: #2a2d30;
+  --wb-ink: #f1f2f0;
+  --wb-ink-soft: #afb3b0;
+  --wb-ink-faint: #7e827f; /* AA-adjusted from SPEC #7C807D for surface contrast */
+  --wb-accent: #3bb6b6;
+  --wb-accent-soft: #16302f;
+  --wb-positive: #34c98a;
+  --wb-warning: #d2a24a;
+}
+
+/*
+ * High-contrast (accessibility). Stronger black/white, bolder text. The point is
+ * maximum legibility, not calm (SPEC §4). SPEC values already clear AA comfortably,
+ * so they are used unchanged; text weight steps up a notch.
+ */
+:root[data-mode='high-contrast'] {
+  color-scheme: light;
+  --wb-weight-body: 500;
+  --wb-weight-heading: 600;
+  --wb-bg: #ffffff;
+  --wb-surface: #ffffff;
+  --wb-border: #000000;
+  --wb-ink: #000000;
+  --wb-ink-soft: #1a1a1a;
+  --wb-ink-faint: #333333;
+  --wb-accent: #006a6a;
+  --wb-accent-soft: #d5ecec;
+  --wb-positive: #0b6b45;
+  --wb-warning: #7a5710;
+}
+
+/* Dim / reading — warm, low-glare, for long reading (SPEC §4). */
+:root[data-mode='dim'] {
+  color-scheme: dark;
+  --wb-bg: #1c1b19;
+  --wb-surface: #24221f;
+  --wb-border: #3a3733;
+  --wb-ink: #ede8e0;
+  --wb-ink-soft: #b8b2a8;
+  --wb-ink-faint: #8e897f; /* AA-adjusted from SPEC #857F75 (was 4.3:1) */
+  --wb-accent: #46b3a8;
+  --wb-accent-soft: #1e302e;
+  --wb-positive: #42be8c;
+  --wb-warning: #c99b57;
+}

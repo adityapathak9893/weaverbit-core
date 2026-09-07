@@ -1,0 +1,10 @@
+/**
+ * index.css — the one-stop stylesheet. A product imports just this
+ * (`import 'weaverbit-core/styles.css'`) to get tokens, fonts, the brand baseline,
+ * and the component styles, in the correct cascade order. Granular entry points
+ * (weaverbit-core/tokens.css, /fonts.css) exist for products that want finer control.
+ */
+@import '../tokens/tokens.css';
+@import '../fonts/fonts.css';
+@import './base.css';
+@import './components.css';
