@@ -46,6 +46,14 @@ async function colorsOf(page: Page, selector: string) {
     });
 }
 
+// Run under reduced motion. The package honors it by disabling the mode colour
+// cross-fade, so computed styles are FINAL immediately after a mode switch —
+// otherwise getComputedStyle can read a mid-transition (interpolated) colour and the
+// contrast assertions flake. This also exercises the reduced-motion path.
+test.beforeEach(async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+});
+
 test.describe('display modes', () => {
   for (const mode of EXPLICIT_MODES) {
     test(`renders the building blocks and meets AA in ${mode}`, async ({ page }, testInfo) => {
