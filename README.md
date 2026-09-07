@@ -1,30 +1,119 @@
-# weaverbit-template — the starter folder
+# weaverbit-core
 
-> Copy this folder to start any new Weaverbit product. It already contains the rulebook, the folder map, the planning forms, and the safety checks, so every product begins the same correct way.
+The shared **brand package** every Weaverbit product installs: design tokens, self-hosted
+fonts, the five display modes + switcher, and the small set of shared UI building blocks.
+Install it and a product inherits the whole Weaverbit look — **with zero local restyling**.
 
-## What's inside
+> Not a website — nobody visits it. It's a dependency. The reasoning behind the brand lives
+> in [`BRAND.md`](./BRAND.md); the encoded plan in [`docs/`](./docs); the spec in
+> [`weaverbit-core-SPEC.md`](./weaverbit-core-SPEC.md).
 
-- **`docs/`** — the fill-in-the-blank planning forms you complete at the start of every product, before any code:
-  - `PRODUCT_SPEC.md` — what it is and why (form)
-  - `WORKFLOW_DATAFLOW.md` — how it behaves and how data moves (form)
-  - `SYSTEM_DESIGN.md` — the technical plan (form)
-  - `DESIGN_GUIDE.md` — how this product looks, extending the shared brand (form)
-- **`CLAUDE.md`** — the agent's operating manual (the build loop, the rules). Copied in, ready.
-- **`.claude/`** — the safety checks: hooks (auto typecheck/lint after edits, full test gate before finishing), the code-reviewer, and the slash commands.
-- **`.github/workflows/`** — the second safety net that re-runs the checks on GitHub.
-- **`CODE_STANDARDS.md`** — the "boring, readable, handcrafted-quality" code rules. Inherited as-is; not filled in per product (note any product-specific addition at the bottom of the file).
-- The reference docs that govern everything: `PROCESS.md` (the rulebook), `STRUCTURE.md` (the folder map), `BRAND.md` (the look-and-feel). These can live here or be linked from a shared place — the point is every product can see them.
+## What you get
 
-## How to start a new product (plain steps)
+- **Design tokens** — `bg`, `surface`, `border`, `ink`, `ink-soft`, `ink-faint`, `accent`,
+  `accent-soft`, `positive`, `warning`, plus type/spacing/radius scales — as semantic CSS
+  variables that resolve per mode. **Never raw hex in a product.**
+- **Five display modes** — Light, Dark, High-contrast, Dim, and **System-auto (default)**.
+  Every text token meets **WCAG AA** in every mode (High-contrast aims higher); see
+  [`docs/DESIGN_GUIDE.md` §2.3](./docs/DESIGN_GUIDE.md) for the measured values.
+- **Self-hosted fonts** — Space Grotesk (headings), Inter (body), JetBrains Mono (technical) —
+  no Google Fonts / CDN call.
+- **Building blocks** — `Wordmark`, `Nav`, `Footer`, `ModeSwitcher`, `StatusTag`/`StatusDot`,
+  `SectionLabel`, `Prose`.
+- **A Tailwind preset** (optional) that maps the tokens to ergonomic utilities.
 
-1. **Copy this folder** into a new repository named after the product (e.g. `weaverbit-web`, `cite`).
-2. **Install the brand:** add `weaverbit-core` (the shared look-and-feel package) from GitHub.
-3. **Give the brief:** tell the agent, in plain words, what the product is.
-4. **The agent fills the four forms** in `docs/` from your brief, and lists any open questions.
-5. **You review and approve each form.** This is the gate. Nothing gets coded until you've approved. Correcting a plan here is cheap; correcting built code is expensive — that's the whole point.
-6. **The agent builds, one slice at a time**, through the loop in `CLAUDE.md`: write → auto-checks → tests → self-review → open a request for you to merge.
-7. **You review each slice and merge it.** You also look at it with your own eyes — no check can tell you if it *looks* right. Then you deploy.
-8. **If the process missed something,** note it and improve the rulebook deliberately (PROCESS.md §8). The process gets better by being used.
+## Install
 
-## The one rule to remember
-Plan first, approve the plan, then build in small reviewed pieces. The forms and the checks exist so that what gets built is what you would have built — and so anything else gets caught before it ships.
+Installed from GitHub by tag (no npm registry). The `prepare` hook builds it on install.
+
+```bash
+npm install github:<owner>/weaverbit-core#v0.1.0
+```
+
+`react` and `react-dom` (≥18) are peer dependencies — the consumer provides them.
+
+## Use it
+
+**1. Import the styles once** at your app root (tokens + fonts + base + components):
+
+```ts
+import 'weaverbit-core/styles.css';
+// or granular: 'weaverbit-core/tokens.css', 'weaverbit-core/fonts.css'
+```
+
+**2. Prevent a theme flash** — run the no-flash script in `<head>` before content. Next.js:
+
+```tsx
+import { noFlashScript } from 'weaverbit-core';
+// in <head>:
+<script dangerouslySetInnerHTML={{ __html: noFlashScript }} />
+```
+
+(Plain HTML/Vite consumers can inline the same snippet in `index.html`.)
+
+**3. Wrap the app in `ModeProvider`** and use the components:
+
+```tsx
+import { ModeProvider, Nav, SectionLabel, StatusTag, Prose } from 'weaverbit-core';
+
+export function App() {
+  return (
+    <ModeProvider>
+      <Nav links={[{ label: 'Writing', href: '/writing' }]} />
+      <main>
+        <SectionLabel>Portfolio</SectionLabel>
+        <StatusTag status="positive">Live</StatusTag>
+        <Prose>{/* your MDX/content */}</Prose>
+      </main>
+    </ModeProvider>
+  );
+}
+```
+
+The `ModeSwitcher` (built into `Nav`, or used standalone) lets visitors change mode; the
+choice is remembered for the session. System-auto follows the device with no JS.
+
+### Tokens directly (any framework)
+
+```css
+.thing {
+  color: var(--wb-ink);
+  background: var(--wb-surface);
+  border: var(--wb-hairline) solid var(--wb-border);
+}
+```
+
+### Tailwind (optional)
+
+```ts
+// tailwind.config.ts
+import weaverbitPreset from 'weaverbit-core/tailwind-preset';
+export default { presets: [weaverbitPreset] /* … */ };
+// → bg-bg, text-ink, text-accent, font-mono, p-4, rounded-md …
+```
+
+The preset points at the same CSS variables, so there is one source of truth and mode
+switching still works.
+
+## Develop
+
+```bash
+npm run dev         # local demo (all blocks, all modes) at http://localhost:5173
+npm run typecheck   # tsc --noEmit
+npm run lint        # eslint, zero warnings
+npm run test        # vitest: contrast gate, no-raw-hex, components, mode, preset
+npm run e2e         # playwright: every mode + no-flash, in a real browser
+npm run build       # tsc → dist + copy css/fonts
+```
+
+## How it's structured
+
+`src/tokens` (the source of truth) · `src/styles` (CSS wiring) · `src/fonts` (self-hosted) ·
+`src/mode` (the mode system) · `src/components` (the building blocks) · `src/index.ts` (the
+public API). See [`STRUCTURE.md` §4.4](./STRUCTURE.md) and
+[`docs/SYSTEM_DESIGN.md`](./docs/SYSTEM_DESIGN.md).
+
+## Versioning
+
+Products pin a git tag and upgrade deliberately. A change to a brand *decision* goes back to
+`BRAND.md` first, then is encoded here (SPEC §7).

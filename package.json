@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Shared Weaverbit brand package: design tokens, self-hosted fonts, five display modes, and the shared UI building blocks. Installed from GitHub by every Weaverbit product.",
   "license": "UNLICENSED",
+  "repository": "github:adityapathak9893/weaverbit-core",
   "type": "module",
   "sideEffects": [
     "**/*.css"
