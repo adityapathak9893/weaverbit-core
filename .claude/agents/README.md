@@ -5,7 +5,7 @@
 ## What's here
 
 ### `code-reviewer.md`
-A principal-level reviewer invoked on a diff **before a PR is opened**. It reads the change against `CLAUDE.md`, `SYSTEM_DESIGN.md`, and `UI.md`, and reports findings by severity (BLOCKER / MAJOR / MINOR / NIT) across: correctness, security, GDPR/PII, type safety, architecture adherence, design adherence, SEO, tests, and maintainability.
+A principal-level reviewer invoked on a diff **before a PR is opened**. It reads the change against `CLAUDE.md`, `CODE_STANDARDS.md`, `STRUCTURE.md`, `docs/SYSTEM_DESIGN.md`, and `docs/DESIGN_GUIDE.md`, and reports findings by severity (BLOCKER / MAJOR / MINOR / NIT) across: correctness, security, GDPR/PII, type safety, architecture adherence, design adherence, SEO, tests, and maintainability.
 Invoke it via the `/review` slash command, or it runs as the self-review step in the build loop (`CLAUDE.md` §6).
 
 ## File format
