@@ -14,6 +14,14 @@ Event: `Stop`.
 Runs the **full** Definition of Done: `typecheck`, `lint`, `test`, `e2e`, `build`. If any fails, it forces Claude to keep working (exit code 2) instead of ending with broken code.
 Includes a `stop_hook_active` guard that prevents an infinite loop (a Stop hook that always blocks would trap the agent forever). The guard parses the event JSON on stdin with `node`; an unparseable payload fails *closed* (gates still run) rather than skipping the gate.
 
+## Fail closed, always
+Both scripts read the gate list out of `package.json` with `node`. If `node` is missing or
+`package.json` will not parse, they **exit 2** rather than treating it as "no gates defined".
+The earlier version suppressed both errors and skipped every gate while exiting 0 — the same
+invisible no-op the `jq` path was fixed to remove, wearing a different missing dependency.
+`tests/harness.test.ts` asserts the guard is present and that these scripts only ever block
+with exit 2.
+
 ## Exit-code contract (how hooks talk to Claude Code)
 - **exit 0** → success, the agent proceeds.
 - **exit 2** → blocking failure; `stderr` text is fed back to Claude. On `PostToolUse` it flags the problem; on `Stop` it forces the agent to continue working.
@@ -34,8 +42,8 @@ If `package.json` or a given npm script doesn't exist yet (e.g. during first sca
 - **The scripts must stay executable.** The exec bit has to be in git, not just on disk:
   `git update-index --chmod=+x .claude/hooks/*.sh`. Committed `100644`, the hook is invoked
   and dies with exit 126 — non-blocking, so the failure never reaches the agent and the gate
-  is silently absent. `settings.json` also invokes them as `bash "…/script.sh"` rather than
-  executing them directly, so a lost exec bit degrades instead of disabling the gate.
-- **Neither script trusts `$CLAUDE_PROJECT_DIR`.** Under `set -u` an unset variable aborts
-  the script with exit 1 — non-blocking and silent again — so the project root falls back to
-  a path resolved from `BASH_SOURCE`.
+  is silently absent. `settings.json` also invokes them as `bash "…/script.sh"`, which ignores the
+  exec bit outright — that is the belt to this braces, not a graceful degradation.
+- **Neither script *requires* `$CLAUDE_PROJECT_DIR`.** It is preferred when set, but under
+  `set -u` a bare expansion of an unset variable aborts the script with exit 1 — non-blocking
+  and silent again — so the project root falls back to a `BASH_SOURCE`-derived path.

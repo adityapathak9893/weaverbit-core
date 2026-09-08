@@ -24,13 +24,12 @@ if [ "$ACTIVE" = "true" ]; then
   exit 0
 fi
 
-# Resolve the repo root from this script's own location rather than trusting the
-# environment. Why: with `set -u`, an unset CLAUDE_PROJECT_DIR aborts the script with
-# "unbound variable" and exit 1 — a NON-blocking code, so the gate disappears silently
-# and the agent is never told. A hook that quietly does nothing is worse than no hook.
-# BASH_SOURCE also survives git-bash on Windows, where the env var was the failure.
-# settings.json invokes this as `bash "${CLAUDE_PROJECT_DIR:-.}/..."` so an unset var
-# falls back to the cwd and this line still gets the chance to run.
+# Prefer CLAUDE_PROJECT_DIR; fall back to a path derived from this script's own location
+# when it is unset or empty. Why the fallback: under `set -u` a bare $CLAUDE_PROJECT_DIR
+# aborts the script with "unbound variable" and exit 1 — a NON-blocking code, so the gate
+# would disappear silently and the agent would never be told. A hook that quietly does
+# nothing is worse than no hook. BASH_SOURCE also covers the git-bash-on-Windows case
+# where the env var was the thing that went missing.
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 cd "$PROJECT_DIR" || {
@@ -43,12 +42,30 @@ if [ ! -f package.json ]; then
   exit 0
 fi
 
-# Is a script defined? Reads package.json directly.
-# Why not `npm run | grep -q`: grep exits on first match and closes the pipe, so npm dies
-# on EPIPE and prints "npm error ..." for every gate — noise on a fully passing run.
-# Why not `npm pkg get`: correct, but spawns npm once per gate for a value we can read.
+# The gate list is read from package.json with node, so both must work. Fail CLOSED:
+# if node is missing or package.json is unparseable, exit 2 rather than skipping. Why this
+# matters: the previous `has_script` swallowed both errors with 2>/dev/null and returned
+# "script not defined", so a broken package.json silently skipped every gate and reported
+# success — the same invisible no-op that the jq path was fixed to remove, just with a
+# different missing dependency.
+if ! command -v node >/dev/null 2>&1; then
+  echo "stop-gate: node not found — gates could NOT run." >&2
+  exit 2
+fi
+
+if ! SCRIPTS=$(node -e 'const s = require(process.cwd() + "/package.json").scripts || {}; process.stdout.write(Object.keys(s).join("\n"))' 2>&1); then
+  echo "stop-gate: cannot read package.json scripts — gates NOT run:" >&2
+  echo "$SCRIPTS" >&2
+  exit 2
+fi
+
+# Exact line match against the captured list, using only builtins: no pipe (a `grep -q`
+# would close the pipe early and trip pipefail) and no extra node process per gate.
 has_script () {
-  [ -n "$(node -p "require(process.cwd()+'/package.json').scripts?.['$1'] ?? ''" 2>/dev/null)" ]
+  case $'\n'"$SCRIPTS"$'\n' in
+    *$'\n'"$1"$'\n'*) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 run_gate () {
