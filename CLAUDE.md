@@ -32,9 +32,10 @@ Write code that keeps the reader informed — but comment for **understanding, n
 ---
 
 ## 1. Project facts [SITE]
-- **App:** weaverbit.com — Next.js 16+ (App Router) + TypeScript + Tailwind. Static-first content hub + MDX blog. See `SYSTEM_DESIGN.md`.
-- **Deploy:** FE → Vercel, BE → Railway. **Not your concern.** Your job ends when verified code is pushed and a PR is opened. Do not write deploy scripts or touch infra.
-- **DB:** Postgres on Railway. **Analytics:** Umami (cookieless). **Feedback:** stored, never emailed.
+- **Package:** `weaverbit-core` — the shared Weaverbit brand package: design tokens, self-hosted fonts, the five display modes, and the shared UI building blocks. TypeScript + React, built with `tsc` to `dist/`. See `docs/SYSTEM_DESIGN.md`.
+- **Not an app.** There is no server, no database, no analytics, no user input, and therefore no PII — nothing here runs at request time. A `dev/` Vite demo exists only so the blocks can be seen and driven in a real browser by the e2e gate.
+- **Consumed, not deployed.** Products install it from GitHub at a tag; there is no deploy target and no hosting dashboard. Your job ends when verified code is pushed and a PR is opened. Do not write deploy or release scripts.
+- **This repo is the brand's source of truth.** `BRAND.md` here is the canonical copy that every other repo points at, and `src/tokens/` is where the colors are defined rather than consumed — a change here changes every product, so treat the public API (`exports` in `package.json`) as a contract and record every change in `CHANGELOG.md`.
 
 ---
 
@@ -47,7 +48,7 @@ npm run typecheck    # tsc --noEmit                — MUST be clean
 npm run lint         # eslint + prettier --check    — MUST be clean
 npm run test         # vitest run                   — all green
 npm run e2e          # playwright test (headless)   — all green
-npm run build        # next build                   — MUST succeed
+npm run build        # tsc -> dist + copy assets    — MUST succeed
 ```
 
 ---
