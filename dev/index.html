@@ -8,8 +8,12 @@
       Inline SVG favicon, not a file: without one the browser falls back to whatever icon
       it cached for localhost:5173 from another Vite app, so the demo tab silently wears a
       different product's identity. Data URI keeps the demo a zero-asset, zero-request page.
-      Mono 'w' on ink — the two brand constants (BRAND.md §4); hardcoded rather than
-      tokenised because an <img>-context data URI cannot read CSS custom properties.
+      Mono 'w' on ink (BRAND.md §3 colors, §4 the mono signature); hardcoded rather than
+      tokenised because an <img>-context data URI cannot read CSS custom properties —
+      tests/harness.test.ts pins the two hexes to tokens.css so they cannot drift.
+      For the same reason it renders in the system mono, not JetBrains Mono: an SVG in
+      <img> context loads no @font-face. Safari ignores SVG favicons entirely; this is a
+      dev-only page, so the fallback is simply no icon rather than a wrong one.
     -->
     <link
       rel="icon"

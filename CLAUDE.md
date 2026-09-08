@@ -44,7 +44,7 @@ Use these exact scripts. If a script is missing, add it to `package.json` rather
 ```
 npm run dev          # local dev server
 npm run typecheck    # tsc --noEmit                — MUST be clean
-npm run lint         # eslint --max-warnings 0      — MUST be clean
+npm run lint         # eslint + prettier --check    — MUST be clean
 npm run test         # vitest run                   — all green
 npm run e2e          # playwright test (headless)   — all green
 npm run build        # next build                   — MUST succeed

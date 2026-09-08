@@ -100,10 +100,11 @@ switching still works.
 ```bash
 npm run dev         # local demo (all blocks, all modes) at http://localhost:5173
 npm run typecheck   # tsc --noEmit
-npm run lint        # eslint, zero warnings
+npm run lint        # eslint (zero warnings) + prettier --check
 npm run test        # vitest: contrast gate, no-raw-hex, components, mode, preset
 npm run e2e         # playwright: every mode + no-flash, in a real browser
 npm run build       # tsc → dist + copy css/fonts
+npm run format:write # apply prettier formatting (lint only checks it)
 ```
 
 ## How it's structured
