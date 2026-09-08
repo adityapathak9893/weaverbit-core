@@ -16,6 +16,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Verification needs nothing but the code. Stated explicitly so a product copying this
+# workflow never inherits a broader default token scope by accident.
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -46,8 +51,10 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Chromium only: both Playwright projects (desktop + mobile viewport) are Chromium,
+      # so installing the full browser set would just cost CI minutes.
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps
+        run: npx playwright install --with-deps chromium
 
       - name: End-to-end tests
         run: npm run e2e
