@@ -24,22 +24,27 @@ harness gates a session.
   A continuation exits 0 with no `node`; a genuine stop still exits 2, because the gates
   genuinely cannot run.
 - **A node warning on stderr could un-find a gate.** Both hooks captured the manifest read
-  with `2>&1`. Command substitution strips trailing newlines, so an at-exit warning would
-  glue itself onto the last script name and that gate would stop matching — the exact
+  with `2>&1`. Command substitution strips trailing newlines, so a node warning would glue
+  itself onto a script name — an at-exit one onto the last, the far commoner startup
+  `ExperimentalWarning` onto the first — and that gate would stop matching, the exact
   silent skip the fail-closed work existed to remove. stderr now flows to the hook's own
   stderr, which is what reaches Claude anyway.
-- **An empty `CLAUDE_PROJECT_DIR` gated the wrong directory.** `cd ""` succeeds and stays
-  put, so an empty value ran the gates against whatever the cwd happened to be. Both hooks
-  now reject it with exit 2.
+- **An unresolvable project root gated the wrong directory.** Both hooks now reject an empty
+  root with exit 2 instead of running `cd ""`, which succeeds and stays put — the gates would
+  have run against whatever the cwd happened to be. This is a narrow hardening, not a live
+  bug: `${CLAUDE_PROJECT_DIR:-…}` already substituted on empty as well as unset, so the only
+  way to reach it is the `BASH_SOURCE` fallback failing to resolve its own location.
 
 ### Changed
 
 - `tests/harness.test.ts` spawns the hooks instead of grepping their source. The old
   fail-closed specs asserted source text, and a string search cannot see an exit code:
   reintroducing the bug behind `npm pkg get … || true` left them green. The specs now drive
-  each hook in a throwaway project root and assert the status Claude Code actually reads,
-  including a positive control that all five gates observably ran and a regression test for
-  the deadlock above.
+  each hook in a throwaway project root and assert the status Claude Code actually reads:
+  that a red gate blocks with exit 2, that both hooks observably run the gates they own
+  (all five for the Stop gate, typecheck and lint only for the fast one), and that a
+  continuation is let through on both tiers of the guard. Each spec was verified to turn red
+  against the mutation it exists to catch.
 
 ## [0.1.1] — 2026-09-09
 
@@ -109,5 +114,6 @@ no token, component, type, or export was touched, so consumers need no migration
 Initial package: design tokens, self-hosted fonts, the five display modes, and the shared
 UI building blocks.
 
+[unreleased]: https://github.com/adityapathak9893/weaverbit-core/compare/v0.1.1...HEAD
 [0.1.1]: https://github.com/adityapathak9893/weaverbit-core/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/adityapathak9893/weaverbit-core/releases/tag/v0.1.0

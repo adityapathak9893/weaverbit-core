@@ -21,10 +21,11 @@
 # manifest will not parse, exit 2 rather than concluding "no gates are defined" — suppressing
 # those two errors is what silently skipped every gate while reporting success. An *absent*
 # package.json is a different case and exits 0: early scaffolding is not an error.
-# tests/harness.test.ts drives this script through those cases for real, and checks that no
-# literal `exit` here uses a status other than 0 or 2. It cannot see a status bash itself
-# produces — an unbound variable (1) or a lost exec bit (126) — which is why those two are
-# guarded by construction above and by the exec-bit assertion in that same file.
+# tests/harness.test.ts drives this script through those cases for real, so a status bash
+# itself produces on a driven path — an unbound variable's exit 1 — turns those specs red
+# too. It also checks that no literal `exit` here uses a status other than 0 or 2. What it
+# cannot see is a lost exec bit (126), because it invokes this file as `bash <path>`; that
+# one is covered by the exec-bit assertion in the same file.
 
 # The block below is duplicated verbatim in the sibling hook rather than sourced from a shared
 # lib. Deliberate: a `source` that cannot find its lib is itself a silent-skip path, and these
@@ -39,8 +40,9 @@ set -uo pipefail
 # where the env var was the thing that went missing.
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
-# `cd ""` succeeds and stays put, so an empty value would silently gate whatever the cwd
-# happens to be. Check before trusting it.
+# Not reachable from an empty CLAUDE_PROJECT_DIR — `:-` above substitutes on empty as well
+# as unset. The one way this is empty is the BASH_SOURCE fallback's own `cd` failing, and
+# `cd ""` then succeeds and stays put, gating whatever the cwd happens to be.
 if [ -z "$PROJECT_DIR" ]; then
   echo "hook: could not resolve the project root; gates NOT run." >&2
   exit 2
@@ -73,7 +75,8 @@ fi
 
 # stderr is deliberately NOT captured into $SCRIPTS: it flows straight to this hook's own
 # stderr, which is what gets fed back to Claude. Merging it with 2>&1 would append any
-# at-exit node warning onto the last script name, so that gate would stop being found —
+# node warning onto a script name — an at-exit one onto the last, the far commoner startup
+# ExperimentalWarning onto the first — so that gate would stop being found:
 # the exact silent-skip this guard exists to remove.
 if ! SCRIPTS=$(node -e 'const s = require(process.cwd() + "/package.json").scripts || {}; process.stdout.write(Object.keys(s).join("\n"))'); then
   echo "hook: cannot read package.json scripts (node error above) — gates NOT run." >&2

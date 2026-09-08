@@ -22,16 +22,16 @@
 # manifest will not parse, exit 2 rather than concluding "no gates are defined" — suppressing
 # those two errors is what silently skipped every gate while reporting success. An *absent*
 # package.json is a different case and exits 0: early scaffolding is not an error.
-# tests/harness.test.ts drives this script through those cases for real, and checks that no
-# literal `exit` here uses a status other than 0 or 2. It cannot see a status bash itself
-# produces — an unbound variable (1) or a lost exec bit (126) — which is why those two are
-# guarded by construction above and by the exec-bit assertion in that same file.
+# tests/harness.test.ts drives this script through those cases for real, so a status bash
+# itself produces on a driven path — an unbound variable's exit 1 — turns those specs red
+# too. It also checks that no literal `exit` here uses a status other than 0 or 2. What it
+# cannot see is a lost exec bit (126), because it invokes this file as `bash <path>`; that
+# one is covered by the exec-bit assertion in the same file.
 
-# The block below is duplicated verbatim in the sibling hook rather than sourced from a shared
-# lib. Deliberate: a `source` that cannot find its lib is itself a silent-skip path, and these
-# two files are the last thing that should depend on another file being present to work.
 set -uo pipefail
 
+# Blocks until stdin closes. Claude Code always pipes the event JSON, but a bare run of this
+# script in a terminal will therefore hang until EOF rather than misbehave — press Ctrl-D.
 INPUT=$(cat)
 
 # Prevent an infinite loop: if this stop was itself triggered by a prior block, allow it.
@@ -52,6 +52,12 @@ fi
 
 # Empty means node is gone, or it failed to parse. Strip whitespace so the match survives
 # the spacing JSON permits ("stop_hook_active" : true) and compare against the literal.
+#
+# Stdin that is not JSON at all matches nothing, ACTIVE stays empty, and we fall through to
+# the gates below — fail closed, which is the right default. Do NOT loosen this pattern to
+# "catch more": a false positive here returns 0 before a single gate runs, which silently
+# turns the entire Definition-of-Done gate into a no-op. Erring the other way only costs a
+# redundant gate run.
 if [ -z "$ACTIVE" ]; then
   case "$(printf '%s' "$INPUT" | tr -d ' \t\n\r')" in
     *'"stop_hook_active":true'*) ACTIVE="true" ;;
@@ -68,10 +74,16 @@ fi
 # would disappear silently and the agent would never be told. A hook that quietly does
 # nothing is worse than no hook. BASH_SOURCE also covers the git-bash-on-Windows case
 # where the env var was the thing that went missing.
+#
+# The project-root resolution and `has_script` blocks below are duplicated verbatim in the
+# sibling hook rather than sourced from a shared lib. Deliberate: a `source` that cannot find
+# its lib is itself a silent-skip path, and these two files are the last thing that should
+# depend on another file being present to work. (Everything above is stop-only.)
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
-# `cd ""` succeeds and stays put, so an empty value would silently gate whatever the cwd
-# happens to be. Check before trusting it.
+# Not reachable from an empty CLAUDE_PROJECT_DIR — `:-` above substitutes on empty as well
+# as unset. The one way this is empty is the BASH_SOURCE fallback's own `cd` failing, and
+# `cd ""` then succeeds and stays put, gating whatever the cwd happens to be.
 if [ -z "$PROJECT_DIR" ]; then
   echo "stop-gate: could not resolve the project root; gates NOT run." >&2
   exit 2
@@ -100,7 +112,8 @@ fi
 
 # stderr is deliberately NOT captured into $SCRIPTS: it flows straight to this hook's own
 # stderr, which is what gets fed back to Claude. Merging it with 2>&1 would append any
-# at-exit node warning onto the last script name, so that gate would stop being found —
+# node warning onto a script name — an at-exit one onto the last, the far commoner startup
+# ExperimentalWarning onto the first — so that gate would stop being found:
 # the exact silent-skip this guard exists to remove.
 if ! SCRIPTS=$(node -e 'const s = require(process.cwd() + "/package.json").scripts || {}; process.stdout.write(Object.keys(s).join("\n"))'); then
   echo "stop-gate: cannot read package.json scripts (node error above) — gates NOT run." >&2
