@@ -26,5 +26,5 @@ That distinction matters: rules in `CLAUDE.md` are "please do this"; hooks in he
 This whole folder is portable. Copy it into any new `*.weaverbit.com` repo, adjust the npm script names in the hooks if they differ, and the new project inherits the same build discipline. See `CLAUDE.md` §10.
 
 ## Dependencies
-- The Stop gate needs **`jq`** installed locally (`brew install jq` / `apt-get install jq`). Without it the gate safely no-ops instead of enforcing.
-- Hook scripts must stay **executable** (`chmod +x .claude/hooks/*.sh`). Copying between machines can strip this.
+- The hooks need **Node** and nothing else. `jq` is deliberately *not* used: it is not guaranteed to be installed, and no-opping the Stop gate when it is absent means the gate quietly stops enforcing — the failure mode is invisible, which is worse than no gate.
+- Hook scripts must stay **executable in git**, not just on disk: `git update-index --chmod=+x .claude/hooks/*.sh`. A script committed `100644` dies with exit 126, which is non-blocking, so the gate disappears without a word. `settings.json` invokes them through `bash` so a stripped exec bit degrades rather than disables.

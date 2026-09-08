@@ -12,7 +12,7 @@ Deliberately cheap — it runs on every single edit, so it must be fast. The hea
 ### `stop-gate.sh` — fires when Claude tries to finish
 Event: `Stop`.
 Runs the **full** Definition of Done: `typecheck`, `lint`, `test`, `e2e`, `build`. If any fails, it forces Claude to keep working (exit code 2) instead of ending with broken code.
-Includes a `stop_hook_active` guard that prevents an infinite loop (a Stop hook that always blocks would trap the agent forever).
+Includes a `stop_hook_active` guard that prevents an infinite loop (a Stop hook that always blocks would trap the agent forever). The guard parses the event JSON on stdin with `node`; an unparseable payload fails *closed* (gates still run) rather than skipping the gate.
 
 ## Exit-code contract (how hooks talk to Claude Code)
 - **exit 0** → success, the agent proceeds.
@@ -26,5 +26,16 @@ Gates are **split across two hooks on purpose**: fast feedback (typecheck+lint) 
 If `package.json` or a given npm script doesn't exist yet (e.g. during first scaffolding), the scripts **skip gracefully** rather than block the agent. The gates "switch on" automatically as the project gains its `typecheck`/`lint`/`test`/`e2e`/`build` scripts — so make sure those scripts actually get defined, or the gates stay dormant.
 
 ## Requirements
-- `jq` installed (used by `stop-gate.sh` to read the event JSON and prevent loops).
-- Scripts must be executable: `chmod +x *.sh`.
+- **Node** — both scripts read `package.json` and the Stop event JSON with `node`. Nothing
+  else is needed: `jq` was deliberately dropped because it is not guaranteed to be
+  installed, and the old code exited 0 when it was missing, which Stop reads as "all gates
+  green" — the entire Definition-of-Done gate disappeared with only a stderr line nobody
+  reads. `node` is guaranteed here, since npm runs the gates.
+- **The scripts must stay executable.** The exec bit has to be in git, not just on disk:
+  `git update-index --chmod=+x .claude/hooks/*.sh`. Committed `100644`, the hook is invoked
+  and dies with exit 126 — non-blocking, so the failure never reaches the agent and the gate
+  is silently absent. `settings.json` also invokes them as `bash "…/script.sh"` rather than
+  executing them directly, so a lost exec bit degrades instead of disabling the gate.
+- **Neither script trusts `$CLAUDE_PROJECT_DIR`.** Under `set -u` an unset variable aborts
+  the script with exit 1 — non-blocking and silent again — so the project root falls back to
+  a path resolved from `BASH_SOURCE`.
