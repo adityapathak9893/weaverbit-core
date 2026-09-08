@@ -28,18 +28,24 @@ These exist in every Weaverbit repo, in these exact locations, regardless of app
 
 ```
 <product>/
-├── PRODUCT_SPEC.md            # planning docs (PROCESS.md §3) live at root
-├── WORKFLOW_DATAFLOW.md
-├── SYSTEM_DESIGN.md
-├── DESIGN_GUIDE.md
-├── CODE_STANDARDS.md
-├── CLAUDE.md                  # harness — identical across products
+├── docs/                      # the four planning docs (PROCESS.md §3) — always in docs/
+│   ├── PRODUCT_SPEC.md
+│   ├── WORKFLOW_DATAFLOW.md
+│   ├── SYSTEM_DESIGN.md
+│   └── DESIGN_GUIDE.md
+├── CODE_STANDARDS.md          # inherited near-verbatim, not filled in per product
+├── PROCESS.md                 # the rulebook — copied from weaverbit-template at birth
+├── STRUCTURE.md               # this doc — copied from weaverbit-template at birth
+├── BRAND.md                   # stub pointing at weaverbit-core (the brand is installed, not copied);
+│                              #   weaverbit-core itself holds the canonical copy
+├── CLAUDE.md                  # harness — identical across products but for its [SITE] stubs
 ├── .claude/                   # hooks, agents, commands
 ├── .github/workflows/         # CI (verification only)
-├── .env.example               # documents required env vars; never real secrets
+├── .env.example               # ONLY if the product has env vars; documents them, never real secrets
 ├── .gitignore
 ├── README.md                  # what this product is, how to run, pointers to docs
-├── tsconfig.json / config     # baseline config, same conventions everywhere
+├── package.json               # the five gate scripts (CLAUDE.md §2) — never absent
+├── tsconfig.json + tooling    # baseline config, same conventions everywhere
 ├── tests/                     # unit + integration (vitest)
 ├── e2e/                       # end-to-end (Playwright)
 ├── public/                    # static assets
@@ -52,10 +58,12 @@ These exist in every Weaverbit repo, in these exact locations, regardless of app
 ```
 
 **Spine rules (all products):**
-- **Brand always comes from `weaverbit-core`** (fonts, design tokens, mono-voice, shared primitives). Never redefined locally. A product may *extend* the brand in `DESIGN_GUIDE.md`, never contradict it.
+- **Brand always comes from `weaverbit-core`** (fonts, design tokens, mono-voice, shared primitives). Never redefined locally. A product may *extend* the brand in `docs/DESIGN_GUIDE.md`, never contradict it.
 - **`lib/` holds no business logic** — only cross-cutting utilities and external-service clients. Business logic belongs to a feature.
 - **`types/` is for global types only.** A type used by one feature lives in that feature.
-- **Planning docs at root**, always findable in the same place.
+- **Planning docs in `docs/`**, always findable in the same place. The governing docs copied from the template (`PROCESS.md`, `STRUCTURE.md`, `CODE_STANDARDS.md`, `BRAND.md`) and the harness (`CLAUDE.md`, `README.md`) sit at the root.
+- **`.env.example` only if the product actually has env vars.** A product with none does not ship an empty one; the moment the first variable is introduced, the file is added in the same PR.
+- **`package.json` always defines all five gate scripts** (`typecheck`, `lint`, `test`, `e2e`, `build` — `CLAUDE.md` §3; `lint` covers formatting too). Without it the hooks and CI silently pass while checking nothing.
 - **Tests mirror the code** they cover; `tests/` for unit/integration, `e2e/` for Playwright.
 
 ---
