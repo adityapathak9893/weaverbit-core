@@ -37,28 +37,54 @@ interface HookMatcher {
 const rawSettings: unknown = JSON.parse(read('.claude/settings.json'));
 
 /**
- * Validated before use rather than cast: "the hooks block is gone" is one of the very
- * failures this file exists to report, and an unchecked cast turns it into a TypeError
- * during collection — a stack trace instead of a named assertion.
+ * Validates the shape the specs below index into. "The hooks block is gone", or an entry that
+ * is no longer a { command } list, is one of the very failures this file exists to report — so
+ * it has to arrive as a named assertion. A throw at COLLECTION time does not do that: vitest
+ * fails the whole file, so nothing in it reports, including the favicon spec at the bottom.
+ * Hence the error is captured here and asserted inside a test.
  */
-function hookConfig(value: unknown): Record<string, HookMatcher[]> {
+function readHooks(value: unknown): Record<string, HookMatcher[]> {
   const hooks = (value as { hooks?: unknown } | null)?.hooks;
   if (typeof hooks !== 'object' || hooks === null) {
     throw new Error('.claude/settings.json has no "hooks" block — every gate is unwired.');
   }
+  for (const [event, matchers] of Object.entries(hooks)) {
+    if (!Array.isArray(matchers)) {
+      throw new Error(`hooks.${event} is not an array of matchers.`);
+    }
+    for (const matcher of matchers) {
+      const list = (matcher as HookMatcher | null)?.hooks;
+      if (!Array.isArray(list) || list.some((hook) => typeof hook?.command !== 'string')) {
+        throw new Error(`hooks.${event} has an entry with no { command } list.`);
+      }
+    }
+  }
   return hooks as Record<string, HookMatcher[]>;
 }
 
+let hooks: Record<string, HookMatcher[]> = {};
+let settingsError = '';
+try {
+  hooks = readHooks(rawSettings);
+} catch (error) {
+  settingsError = error instanceof Error ? error.message : String(error);
+}
+
+const hookCommands = Object.values(hooks)
+  .flat()
+  .flatMap((entry) => entry.hooks)
+  .map((hook) => hook.command);
+
 describe('settings.json wiring points at real scripts', () => {
-  it('has a hooks block at all', () => {
-    expect(() => hookConfig(rawSettings)).not.toThrow();
+  it('has a well-formed hooks block', () => {
+    expect(settingsError, settingsError).toBe('');
   });
 
-  const hooks = hookConfig(rawSettings);
-  const hookCommands = Object.values(hooks)
-    .flat()
-    .flatMap((entry) => entry.hooks)
-    .map((hook) => hook.command);
+  it('wires at least one hook command', () => {
+    // Without this, a settings.json that parsed but wired nothing would generate zero of
+    // the per-command specs below and the suite would go green on an unwired harness.
+    expect(hookCommands.length).toBeGreaterThan(0);
+  });
 
   it('still registers both lifecycle events', () => {
     // arrayContaining, not toEqual: a product legitimately adding SessionStart must not
@@ -91,6 +117,10 @@ describe('hook scripts are committed executable', () => {
   //   git update-index --chmod=+x .claude/hooks/*.sh
   let entries: { mode: string; path: string }[] = [];
   let gitError = '';
+  // Skip only when there is genuinely no repository. A git failure INSIDE one is a real
+  // failure: `entries` would be empty, the per-file loop would generate nothing, and the
+  // repo's only exec-bit guard would evaporate into a green skip.
+  const noRepo = !existsSync(join(root, '.git'));
   try {
     entries = execFileSync('git', ['ls-files', '-s', '.claude/hooks/'], {
       cwd: root,
@@ -108,13 +138,14 @@ describe('hook scripts are committed executable', () => {
       })
       .filter((entry) => entry.path.endsWith('.sh'));
   } catch (error) {
-    // The harness is copied into new repos and may be read before `git init`. That is a
-    // skip, not a failure — but a named one, so it can never be mistaken for a pass.
     gitError = error instanceof Error ? error.message : String(error);
   }
 
-  it.skipIf(gitError !== '')('finds the hook scripts in the index', () => {
-    expect(entries.length, `git reported no hook scripts (${gitError})`).toBeGreaterThan(0);
+  it.skipIf(noRepo)('finds the hook scripts in the index', () => {
+    // The harness is copied into new repos and may be read before `git init` — that case is
+    // skipped above. Anything else is reported.
+    expect(gitError, `git ls-files failed inside a real repo: ${gitError}`).toBe('');
+    expect(entries.length, 'git reported no hook scripts').toBeGreaterThan(0);
   });
 
   for (const entry of entries) {
@@ -124,7 +155,7 @@ describe('hook scripts are committed executable', () => {
   }
 });
 
-describe('hook scripts fail closed', () => {
+describe('hook scripts gate correctly', () => {
   const sandboxes: string[] = [];
   afterAll(() => sandboxes.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
 
@@ -159,11 +190,13 @@ describe('hook scripts fail closed', () => {
   }
 
   it('a stripped PATH really does hide node', () => {
-    // Guards the guard: if node stayed resolvable, every "node missing" case below would
-    // be testing the healthy path and passing for the wrong reason.
-    expect(
-      spawnSync('node', ['-v'], { env: { ...process.env, PATH: pathWithoutNode } }).error,
-    ).toBeDefined();
+    // Guards the guard: if node stayed resolvable, every "node missing" case below would be
+    // testing the healthy path and passing for the wrong reason. ENOENT specifically, not
+    // merely "some error" — an EACCES or E2BIG would satisfy a bare toBeDefined() while node
+    // was still perfectly findable. It also catches pathWithoutNode collapsing to '', which
+    // makes execvp fall back to a confstr default PATH that does contain node.
+    const probe = spawnSync('node', ['-v'], { env: { ...process.env, PATH: pathWithoutNode } });
+    expect((probe.error as NodeJS.ErrnoException | undefined)?.code).toBe('ENOENT');
   });
 
   for (const script of HOOKS) {
@@ -191,6 +224,39 @@ describe('hook scripts fail closed', () => {
     });
   }
 
+  for (const script of HOOKS) {
+    it(`${script} blocks with exit 2 when a gate is red`, () => {
+      // The behavior the whole harness exists for (CLAUDE.md §3), and the one with the most
+      // dangerous silent failure: flipping either hook's final `exit 2` to `exit 0` left
+      // every other spec in this file green, because none of them defined a FAILING gate.
+      const manifest = '{"name":"sb","scripts":{"typecheck":"exit 1","lint":"true"}}';
+      const { status, stderr } = run(script, sandbox(manifest));
+      expect(status, 'a red gate must block, or the Definition of Done is advisory').toBe(2);
+      expect(stderr).toMatch(/typecheck failed/);
+    }, 60_000);
+  }
+
+  it('post-edit-verify.sh runs typecheck and lint, and nothing slower', () => {
+    // The sibling hook's positive control. Without it, guarding both `has_script` calls with
+    // `false &&` — so the hook checks nothing at all — keeps every one of its specs green.
+    // Asserting the exact list also pins its documented contract: the fast pair here, the
+    // full five at the Stop gate, never test/e2e/build on every keystroke.
+    const dir = sandbox(
+      JSON.stringify({
+        name: 'sb',
+        scripts: Object.fromEntries(
+          ['typecheck', 'lint', 'test', 'e2e', 'build'].map((g) => [g, `echo ${g} >> ran.log`]),
+        ),
+      }),
+    );
+    const { status } = run('.claude/hooks/post-edit-verify.sh', dir);
+    expect(status).toBe(0);
+    expect(readFileSync(join(dir, 'ran.log'), 'utf8').trim().split('\n')).toEqual([
+      'typecheck',
+      'lint',
+    ]);
+  }, 60_000);
+
   it('stop-gate.sh lets a hook-triggered continuation through even with no node', () => {
     // Regression test for the deadlock this branch fixes: the stop_hook_active guard parsed
     // stdin with node, so when node was the missing dependency the guard could never fire
@@ -201,6 +267,20 @@ describe('hook scripts fail closed', () => {
       input: '{"stop_hook_active":true}',
       path: pathWithoutNode,
     });
+    expect(status, 'a continuation must exit 0 or the Stop hook loops forever').toBe(0);
+  });
+
+  it('stop-gate.sh lets a hook-triggered continuation through with node present', () => {
+    // The tier the fix did NOT change, and the tier that actually runs here — node is never
+    // missing in a Node repo. The spec above pins the fallback only, so stubbing this parse
+    // to a bare "false" reinstates the original infinite loop on the production path with
+    // the whole suite still green. Both tiers need their own spec.
+    const manifest = '{"name":"sb","scripts":{"test":"exit 1"}}';
+    const { status } = run('.claude/hooks/stop-gate.sh', sandbox(manifest), {
+      input: '{"stop_hook_active":true}',
+    });
+    // The red gate is deliberate: it proves the guard returned before running anything,
+    // rather than running gates that happened to pass.
     expect(status, 'a continuation must exit 0 or the Stop hook loops forever').toBe(0);
   });
 
