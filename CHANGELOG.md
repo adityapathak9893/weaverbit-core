@@ -7,6 +7,40 @@ package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). B
 every Weaverbit product installs this package, a breaking change here breaks all of
 them — the public API surface (`exports` in `package.json`) is the contract.
 
+## [Unreleased]
+
+Harness fix carried over from `weaverbit-template` (PR #2). **No API change** — nothing
+under `dist/` is touched, so consumers are unaffected; this only changes how the build
+harness gates a session.
+
+### Fixed
+
+- **The Stop gate deadlocked when `node` was the missing dependency.** 0.1.1 made the hooks
+  fail closed, but `stop-gate.sh` still needed `node` to parse `stop_hook_active` off stdin.
+  With `node` absent the guard could never fire, so the new fail-closed branch below it
+  exited 2 on *every* stop — and a Stop hook that exits 2 re-triggers itself, so the agent
+  could never finish. The guard is now two-tier: `node` parses the JSON when it is
+  available, and a whitespace-stripped string match covers the one case where it is not.
+  A continuation exits 0 with no `node`; a genuine stop still exits 2, because the gates
+  genuinely cannot run.
+- **A node warning on stderr could un-find a gate.** Both hooks captured the manifest read
+  with `2>&1`. Command substitution strips trailing newlines, so an at-exit warning would
+  glue itself onto the last script name and that gate would stop matching — the exact
+  silent skip the fail-closed work existed to remove. stderr now flows to the hook's own
+  stderr, which is what reaches Claude anyway.
+- **An empty `CLAUDE_PROJECT_DIR` gated the wrong directory.** `cd ""` succeeds and stays
+  put, so an empty value ran the gates against whatever the cwd happened to be. Both hooks
+  now reject it with exit 2.
+
+### Changed
+
+- `tests/harness.test.ts` spawns the hooks instead of grepping their source. The old
+  fail-closed specs asserted source text, and a string search cannot see an exit code:
+  reintroducing the bug behind `npm pkg get … || true` left them green. The specs now drive
+  each hook in a throwaway project root and assert the status Claude Code actually reads,
+  including a positive control that all five gates observably ran and a regression test for
+  the deadlock above.
+
 ## [0.1.1] — 2026-09-09
 
 Harness and CI fixes backported from `weaverbit-template` (PR #1). **No API change** —
