@@ -40,12 +40,17 @@ no token, component, type, or export was touched, so consumers need no migration
 - CI installs only Chromium (both Playwright projects are Chromium) and declares an
   explicit `permissions: contents: read` scope.
 - `.claude/agents/code-reviewer.md` no longer cites `UI.md`, `/api/feedback`, or
-  `lib/analytics.ts` — none of which exist in a brand package with no server. It does still
-  reference `CODE_STANDARDS.md`, which this repo has yet to adopt; see the PR's follow-ups.
+  `lib/analytics.ts` — none of which exist in a brand package with no server. Every document
+  it now names is present in the repo.
+- `CLAUDE.md` §1 describes this package instead of weaverbit.com: no server, no database, no
+  analytics, no PII, no deploy target — consumed by products from a GitHub tag. §2's `build`
+  line said `next build`; it is `tsc` plus an asset copy.
 - `STRUCTURE.md` §2 matches the template: planning docs live in `docs/`.
 
 ### Added
 
+- `CODE_STANDARDS.md` at the root, copied unchanged from `weaverbit-template`. This repo
+  follows it like any product, and it completes the spine `STRUCTURE.md` §2 describes.
 - `tests/gates.test.ts` (backported from the template) and `tests/harness.test.ts` guard the
   invariants above: the five gate scripts exist and are not placeholders, the hooks are
   committed `100755`, `settings.json` points at scripts that exist, and the hooks only ever
@@ -54,6 +59,12 @@ no token, component, type, or export was touched, so consumers need no migration
 - `dev/index.html` ships an inline SVG favicon, so the local demo no longer inherits
   whatever icon the browser cached for `localhost:5173` from another app.
 - `coverage/` and `package-lock.json` added to `.prettierignore`.
+
+### Removed
+
+- `.github/workflows/README.md`. It documented a Vercel/Railway deploy that this package
+  does not have, and a single-workflow folder does not clear the bar in `CLAUDE.md` §11 —
+  the reasoning that earns its keep now lives in comments inside `ci.yml` itself.
 
 ## [0.1.0] — 2026-09-07
 
