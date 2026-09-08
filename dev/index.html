@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>weaverbit-core — local demo</title>
     <!--
+      Inline SVG favicon, not a file: without one the browser falls back to whatever icon
+      it cached for localhost:5173 from another Vite app, so the demo tab silently wears a
+      different product's identity. Data URI keeps the demo a zero-asset, zero-request page.
+      Mono 'w' on ink — the two brand constants (BRAND.md §4); hardcoded rather than
+      tokenised because an <img>-context data URI cannot read CSS custom properties.
+    -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%2316161a'/><text x='16' y='23' text-anchor='middle' font-family='ui-monospace,SFMono-Regular,Menlo,Consolas,monospace' font-size='21' font-weight='600' fill='%23fbfbfa'>w</text></svg>"
+    />
+    <!--
       No-flash mode script. Mirrors the exported `noFlashScript` (src/mode/no-flash-script.ts)
       so the demo behaves like a real consumer: the stored mode is applied before first paint.
     -->
