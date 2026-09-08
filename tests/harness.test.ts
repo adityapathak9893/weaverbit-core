@@ -7,7 +7,7 @@
  * red output to notice — the gate simply stops existing. A test is the only thing that
  * can see the difference between "enforced" and "silently absent".
  *
- * See CLAUDE.md §9 and .claude/hooks/README.md.
+ * See CLAUDE.md §9, and the exit-code contract in each hook script's own header.
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';

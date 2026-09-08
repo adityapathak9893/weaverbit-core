@@ -65,6 +65,10 @@ no token, component, type, or export was touched, so consumers need no migration
 - `.github/workflows/README.md`. It documented a Vercel/Railway deploy that this package
   does not have, and a single-workflow folder does not clear the bar in `CLAUDE.md` §11 —
   the reasoning that earns its keep now lives in comments inside `ci.yml` itself.
+- The four `.claude/**/README.md` files, for the same reason: §11 excludes the control-layer
+  folders, whose files are named for what they do. The one thing they documented that the
+  filenames do not — the exit-code contract, and why the scripts fail closed — moved into
+  the header of each hook script, next to the code it governs.
 
 ## [0.1.0] — 2026-09-07
 

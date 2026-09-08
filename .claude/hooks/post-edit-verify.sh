@@ -5,9 +5,23 @@
 # back to Claude so it fixes immediately instead of accumulating errors.
 #
 # PostToolUse cannot undo the edit, but an exit of 2 with stderr text is surfaced to
-# Claude as feedback. ONLY exit 2: every other non-zero status is non-blocking and is
-# swallowed without reaching the agent. We keep this FAST (typecheck+lint only);
-# the full test/e2e/build suite runs at the Stop gate, not on every keystroke.
+# Claude as feedback. We keep this FAST (typecheck+lint only); the full test/e2e/build
+# suite runs at the Stop gate, not on every keystroke.
+#
+# EXIT-CODE CONTRACT (how a hook talks to Claude Code) — why this file is so careful:
+#   exit 0    -> success; the agent proceeds.
+#   exit 2    -> blocking; stderr is fed back to Claude. On Stop it forces the agent to keep
+#                working; on PostToolUse it flags the problem for immediate fix.
+#   any other -> NON-blocking warning, swallowed. It never reaches the agent at all.
+# So every failure path here must end in 2. An exit of 1 (unbound variable), 126 (lost exec
+# bit), or a silent 0 is indistinguishable from "all gates green" — which is exactly how this
+# gate went missing in this repo without anyone noticing.
+#
+# FAIL CLOSED: the gate list is read out of package.json with node. If node is absent or the
+# manifest will not parse, exit 2 rather than concluding "no gates are defined" — suppressing
+# those two errors is what silently skipped every gate while reporting success. An *absent*
+# package.json is a different case and exits 0: early scaffolding is not an error.
+# tests/harness.test.ts asserts the guard is present and that this script only ever exits 0 or 2.
 
 set -uo pipefail
 
