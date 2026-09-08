@@ -11,7 +11,7 @@ real browser, as the SPEC requires (SPEC §6; `docs/SYSTEM_DESIGN.md` §10).
 
 | File | Purpose |
 |---|---|
-| `index.html` | Demo entry; includes the no-flash mode script (mirrors `noFlashScript`). |
+| `index.html` | Demo entry; includes the no-flash mode script (mirrors `noFlashScript`) and an inline SVG favicon pinned to the tokens by `tests/harness.test.ts`. |
 | `main.tsx` | Renders Nav, StatusTag, Wordmark, SectionLabel, Prose, Footer, ModeSwitcher, and a token swatch grid, wrapped in `ModeProvider`. |
 | `vite-env.d.ts` | Vite client types (lets the demo import CSS). |
 
