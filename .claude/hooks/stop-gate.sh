@@ -22,19 +22,48 @@
 # manifest will not parse, exit 2 rather than concluding "no gates are defined" — suppressing
 # those two errors is what silently skipped every gate while reporting success. An *absent*
 # package.json is a different case and exits 0: early scaffolding is not an error.
-# tests/harness.test.ts asserts the guard is present and that this script only ever exits 0 or 2.
+# tests/harness.test.ts drives this script through those cases for real, so a status bash
+# itself produces on a driven path — an unbound variable's exit 1 — turns those specs red
+# too. It also checks that no literal `exit` here uses a status other than 0 or 2. What it
+# cannot see is a lost exec bit (126), because it invokes this file as `bash <path>`; that
+# one is covered by the exec-bit assertion in the same file.
 
 set -uo pipefail
 
+# Blocks until stdin closes. Claude Code always pipes the event JSON, but a bare run of this
+# script in a terminal will therefore hang until EOF rather than misbehave — press Ctrl-D.
 INPUT=$(cat)
 
-# Prevent infinite loop: if this stop was itself triggered by a prior block, allow it.
+# Prevent an infinite loop: if this stop was itself triggered by a prior block, allow it.
 #
-# Why not jq: it is not guaranteed to be installed, and the old code exited 0 when it
-# was missing — Stop treats exit 0 as "all good", so the whole Definition-of-Done gate
-# vanished with only a stderr line nobody reads. node is guaranteed here (this is a
-# Node repo, and npm runs the gates), so the parse can never be the reason we skip.
-ACTIVE=$(printf '%s' "$INPUT" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{let v=false;try{v=JSON.parse(s).stop_hook_active===true}catch{}process.stdout.write(String(v))})" 2>/dev/null)
+# This guard MUST survive a missing node. The fail-closed check further down exits 2 when
+# node is absent, and a Stop hook that exits 2 re-triggers itself — so if the guard needed
+# node to decide, "node is missing" would become an unbreakable loop rather than a gate.
+# Hence two tiers: node parses the JSON exactly when it is available, and a raw string
+# match is the fallback for the one case where it is not.
+#
+# Why not jq for either tier: it is not guaranteed to be installed, and the old code
+# exited 0 when it was missing — Stop treats exit 0 as "all good", so the whole
+# Definition-of-Done gate vanished with only a stderr line nobody reads.
+ACTIVE=""
+if command -v node >/dev/null 2>&1; then
+  ACTIVE=$(printf '%s' "$INPUT" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{let v=false;try{v=JSON.parse(s).stop_hook_active===true}catch{}process.stdout.write(String(v))})" 2>/dev/null)
+fi
+
+# Empty means node is gone, or it failed to parse. Strip whitespace so the match survives
+# the spacing JSON permits ("stop_hook_active" : true) and compare against the literal.
+#
+# Stdin that is not JSON at all matches nothing, ACTIVE stays empty, and we fall through to
+# the gates below — fail closed, which is the right default. Do NOT loosen this pattern to
+# "catch more": a false positive here returns 0 before a single gate runs, which silently
+# turns the entire Definition-of-Done gate into a no-op. Erring the other way only costs a
+# redundant gate run.
+if [ -z "$ACTIVE" ]; then
+  case "$(printf '%s' "$INPUT" | tr -d ' \t\n\r')" in
+    *'"stop_hook_active":true'*) ACTIVE="true" ;;
+  esac
+fi
+
 if [ "$ACTIVE" = "true" ]; then
   exit 0
 fi
@@ -45,7 +74,20 @@ fi
 # would disappear silently and the agent would never be told. A hook that quietly does
 # nothing is worse than no hook. BASH_SOURCE also covers the git-bash-on-Windows case
 # where the env var was the thing that went missing.
+#
+# The project-root resolution and `has_script` blocks below are duplicated verbatim in the
+# sibling hook rather than sourced from a shared lib. Deliberate: a `source` that cannot find
+# its lib is itself a silent-skip path, and these two files are the last thing that should
+# depend on another file being present to work. (Everything above is stop-only.)
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+# Not reachable from an empty CLAUDE_PROJECT_DIR — `:-` above substitutes on empty as well
+# as unset. The one way this is empty is the BASH_SOURCE fallback's own `cd` failing, and
+# `cd ""` then succeeds and stays put, gating whatever the cwd happens to be.
+if [ -z "$PROJECT_DIR" ]; then
+  echo "stop-gate: could not resolve the project root; gates NOT run." >&2
+  exit 2
+fi
 
 cd "$PROJECT_DIR" || {
   echo "stop-gate: cannot cd to project root ($PROJECT_DIR); gates NOT run." >&2
@@ -68,14 +110,20 @@ if ! command -v node >/dev/null 2>&1; then
   exit 2
 fi
 
-if ! SCRIPTS=$(node -e 'const s = require(process.cwd() + "/package.json").scripts || {}; process.stdout.write(Object.keys(s).join("\n"))' 2>&1); then
-  echo "stop-gate: cannot read package.json scripts — gates NOT run:" >&2
-  echo "$SCRIPTS" >&2
+# stderr is deliberately NOT captured into $SCRIPTS: it flows straight to this hook's own
+# stderr, which is what gets fed back to Claude. Merging it with 2>&1 would append any
+# node warning onto a script name — an at-exit one onto the last, the far commoner startup
+# ExperimentalWarning onto the first — so that gate would stop being found:
+# the exact silent-skip this guard exists to remove.
+if ! SCRIPTS=$(node -e 'const s = require(process.cwd() + "/package.json").scripts || {}; process.stdout.write(Object.keys(s).join("\n"))'); then
+  echo "stop-gate: cannot read package.json scripts (node error above) — gates NOT run." >&2
   exit 2
 fi
 
-# Exact line match against the captured list, using only builtins: no pipe (a `grep -q`
-# would close the pipe early and trip pipefail) and no extra node process per gate.
+# Exact line match against the captured list, using only builtins. Why not `npm pkg get`:
+# correct, but it spawns npm once per gate for a value already read here. Why not a pipe to
+# grep: it forks a process per lookup for a string this small, and `grep -q` closing the
+# pipe early is a pipefail hazard not worth inviting into a script that must not fail open.
 has_script () {
   case $'\n'"$SCRIPTS"$'\n' in
     *$'\n'"$1"$'\n'*) return 0 ;;

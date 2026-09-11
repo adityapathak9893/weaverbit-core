@@ -7,17 +7,23 @@
  * red output to notice — the gate simply stops existing. A test is the only thing that
  * can see the difference between "enforced" and "silently absent".
  *
+ * The fail-closed specs below RUN the hooks rather than grepping them: the property is
+ * "which exit code comes back under a broken toolchain", and no string search can see that.
+ *
  * See CLAUDE.md §9, and the exit-code contract in each hook script's own header.
  */
-import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { afterAll, describe, expect, it } from 'vitest';
 import { palettes } from './helpers/parse-tokens';
 
-// Resolved from vitest's cwd, not import.meta.url, which is not a file: URL under jsdom.
+// vitest runs from the repo root, so cwd resolves the fixtures this file reads.
 const root = process.cwd();
 const read = (p: string) => readFileSync(resolve(root, p), 'utf8');
+
+const HOOKS = ['.claude/hooks/post-edit-verify.sh', '.claude/hooks/stop-gate.sh'] as const;
 
 interface HookCommand {
   type: string;
@@ -27,35 +33,119 @@ interface HookMatcher {
   matcher?: string;
   hooks: HookCommand[];
 }
-const settings = JSON.parse(read('.claude/settings.json')) as {
-  hooks: Record<string, HookMatcher[]>;
-};
 
-/** Every `command` string across every lifecycle event in settings.json. */
-const hookCommands = Object.values(settings.hooks)
+const rawSettings: unknown = JSON.parse(read('.claude/settings.json'));
+
+/**
+ * Validates the shape the specs below index into. "The hooks block is gone", or an entry that
+ * is no longer a { command } list, is one of the very failures this file exists to report — so
+ * it has to arrive as a named assertion. A throw at COLLECTION time does not do that: vitest
+ * fails the whole file, so nothing in it reports, including the favicon spec at the bottom.
+ * Hence the error is captured here and asserted inside a test.
+ */
+function readHooks(value: unknown): Record<string, HookMatcher[]> {
+  const hooks = (value as { hooks?: unknown } | null)?.hooks;
+  if (typeof hooks !== 'object' || hooks === null) {
+    throw new Error('.claude/settings.json has no "hooks" block — every gate is unwired.');
+  }
+  for (const [event, matchers] of Object.entries(hooks)) {
+    if (!Array.isArray(matchers)) {
+      throw new Error(`hooks.${event} is not an array of matchers.`);
+    }
+    for (const matcher of matchers) {
+      const list = (matcher as HookMatcher | null)?.hooks;
+      if (!Array.isArray(list) || list.some((hook) => typeof hook?.command !== 'string')) {
+        throw new Error(`hooks.${event} has an entry with no { command } list.`);
+      }
+    }
+  }
+  return hooks as Record<string, HookMatcher[]>;
+}
+
+let hooks: Record<string, HookMatcher[]> = {};
+let settingsError = '';
+try {
+  hooks = readHooks(rawSettings);
+} catch (error) {
+  settingsError = error instanceof Error ? error.message : String(error);
+}
+
+const hookCommands = Object.values(hooks)
   .flat()
   .flatMap((entry) => entry.hooks)
   .map((hook) => hook.command);
+
+describe('settings.json wiring points at real scripts', () => {
+  it('has a well-formed hooks block', () => {
+    expect(settingsError, settingsError).toBe('');
+  });
+
+  it('wires at least one hook command', () => {
+    // Without this, a settings.json that parsed but wired nothing would generate zero of
+    // the per-command specs below and the suite would go green on an unwired harness.
+    expect(hookCommands.length).toBeGreaterThan(0);
+  });
+
+  it('still registers both lifecycle events', () => {
+    // arrayContaining, not toEqual: a product legitimately adding SessionStart must not
+    // turn this red. What must never happen is one of these two going missing.
+    expect(Object.keys(hooks)).toEqual(expect.arrayContaining(['PostToolUse', 'Stop']));
+  });
+
+  for (const command of hookCommands) {
+    // The path inside the quotes, with the ${CLAUDE_PROJECT_DIR:-.} prefix stripped.
+    const scriptPath = command.match(/\$\{CLAUDE_PROJECT_DIR:-\.\}\/([^"]+)/)?.[1];
+
+    it(`resolves the script in: ${command}`, () => {
+      if (!scriptPath) throw new Error(`no \${CLAUDE_PROJECT_DIR:-.}-relative path in: ${command}`);
+      expect(existsSync(resolve(root, scriptPath))).toBe(true);
+    });
+
+    it(`invokes through bash, with a default for an unset project dir: ${command}`, () => {
+      // `bash "..."` ignores the exec bit outright; `:-.` keeps `set -u` from aborting the
+      // script with exit 1 before it can resolve its own location.
+      expect(command.startsWith('bash "')).toBe(true);
+      expect(command).toContain('${CLAUDE_PROJECT_DIR:-.}');
+    });
+  }
+});
 
 describe('hook scripts are committed executable', () => {
   // The exec bit must be in the INDEX, not just on disk: git is what a fresh clone and CI
   // get. Committed 100644, the hook is invoked and dies with exit 126 — non-blocking, so
   // the failure never reaches the agent. Restore with:
   //   git update-index --chmod=+x .claude/hooks/*.sh
-  const entries = execFileSync('git', ['ls-files', '-s', '.claude/hooks/'], {
-    cwd: root,
-    encoding: 'utf8',
-  })
-    .trim()
-    .split('\n')
-    .map((line) => {
-      const [mode, , , path] = line.split(/\s+/);
-      return { mode, path: path ?? '' };
+  let entries: { mode: string; path: string }[] = [];
+  let gitError = '';
+  // Skip only when there is genuinely no repository. A git failure INSIDE one is a real
+  // failure: `entries` would be empty, the per-file loop would generate nothing, and the
+  // repo's only exec-bit guard would evaporate into a green skip.
+  const noRepo = !existsSync(join(root, '.git'));
+  try {
+    entries = execFileSync('git', ['ls-files', '-s', '.claude/hooks/'], {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
     })
-    .filter((entry) => entry.path.endsWith('.sh'));
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        // `git ls-files -s` is "<mode> <sha> <stage>\t<path>"; the tab is guaranteed, so
+        // splitting on it keeps a path containing spaces intact.
+        const [meta = '', path = ''] = line.split('\t');
+        return { mode: meta.split(' ')[0] ?? '', path };
+      })
+      .filter((entry) => entry.path.endsWith('.sh'));
+  } catch (error) {
+    gitError = error instanceof Error ? error.message : String(error);
+  }
 
-  it('finds the hook scripts at all', () => {
-    expect(entries.length).toBeGreaterThan(0);
+  it.skipIf(noRepo)('finds the hook scripts in the index', () => {
+    // The harness is copied into new repos and may be read before `git init` — that case is
+    // skipped above. Anything else is reported.
+    expect(gitError, `git ls-files failed inside a real repo: ${gitError}`).toBe('');
+    expect(entries.length, 'git reported no hook scripts').toBeGreaterThan(0);
   });
 
   for (const entry of entries) {
@@ -65,48 +155,168 @@ describe('hook scripts are committed executable', () => {
   }
 });
 
-describe('settings.json wiring points at real scripts', () => {
-  it('registers both lifecycle events', () => {
-    expect(Object.keys(settings.hooks).sort()).toEqual(['PostToolUse', 'Stop']);
+describe('hook scripts gate correctly', () => {
+  const sandboxes: string[] = [];
+  afterAll(() => sandboxes.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
+
+  /** A throwaway project root, optionally holding the given package.json text. */
+  function sandbox(manifest?: string): string {
+    const dir = mkdtempSync(join(tmpdir(), 'wb-hook-'));
+    sandboxes.push(dir);
+    if (manifest !== undefined) writeFileSync(join(dir, 'package.json'), manifest);
+    return dir;
+  }
+
+  // Every PATH entry that does NOT contain a node binary. Version managers (fnm, nvm) put
+  // several shim dirs on PATH, so dropping only the first still leaves node resolvable.
+  const pathWithoutNode = (process.env.PATH ?? '')
+    .split(':')
+    .filter((dir) => dir && !existsSync(join(dir, 'node')))
+    .join(':');
+
+  /** Runs a hook for real and returns its exit status — the only thing Claude Code reads. */
+  function run(script: string, cwd: string, opts: { input?: string; path?: string } = {}) {
+    const result = spawnSync('bash', [resolve(root, script)], {
+      cwd,
+      input: opts.input ?? '{}',
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CLAUDE_PROJECT_DIR: cwd,
+        ...(opts.path === undefined ? {} : { PATH: opts.path }),
+      },
+    });
+    return { status: result.status, stderr: result.stderr ?? '' };
+  }
+
+  it('a stripped PATH really does hide node', () => {
+    // Guards the guard: if node stayed resolvable, every "node missing" case below would be
+    // testing the healthy path and passing for the wrong reason. ENOENT specifically, not
+    // merely "some error" — an EACCES or E2BIG would satisfy a bare toBeDefined() while node
+    // was still perfectly findable. It also catches pathWithoutNode collapsing to '', which
+    // makes execvp fall back to a confstr default PATH that does contain node.
+    const probe = spawnSync('node', ['-v'], { env: { ...process.env, PATH: pathWithoutNode } });
+    expect((probe.error as NodeJS.ErrnoException | undefined)?.code).toBe('ENOENT');
   });
 
-  for (const command of hookCommands) {
-    // The path inside the quotes, with the ${CLAUDE_PROJECT_DIR:-.} prefix stripped.
-    const scriptPath = command.match(/\$\{CLAUDE_PROJECT_DIR:-\.\}\/([^"]+)/)?.[1];
-
-    it(`resolves the script in: ${command}`, () => {
-      expect(scriptPath, `no \${CLAUDE_PROJECT_DIR:-.}-relative path in: ${command}`).toBeTruthy();
-      expect(existsSync(resolve(root, scriptPath as string))).toBe(true);
+  for (const script of HOOKS) {
+    it(`${script} blocks with exit 2 when package.json will not parse`, () => {
+      const { status, stderr } = run(script, sandbox('{"name": BROKEN,,,'));
+      expect(status, 'an unreadable manifest must not read as "no gates defined"').toBe(2);
+      expect(stderr).toMatch(/gates NOT run/);
     });
 
-    it(`invokes through bash, with a default for an unset project dir: ${command}`, () => {
-      // `bash "..."` survives a stripped exec bit; `:-.` keeps `set -u` from aborting the
-      // script with exit 1 before it can resolve its own location.
-      expect(command.startsWith('bash "')).toBe(true);
-      expect(command).toContain('${CLAUDE_PROJECT_DIR:-.}');
+    it(`${script} blocks with exit 2 when node is missing`, () => {
+      const manifest = '{"name":"sb","scripts":{"typecheck":"true","lint":"true"}}';
+      const { status, stderr } = run(script, sandbox(manifest), { path: pathWithoutNode });
+      expect(status, 'no node means the gates did not run — that is not success').toBe(2);
+      expect(stderr).toMatch(/node not found/);
+    });
+
+    it(`${script} exits 0 when package.json is absent`, () => {
+      // The deliberate carve-out: early scaffolding is not an error. Only an unreadable
+      // manifest is. Without this the hooks would block a repo that has no project yet.
+      expect(run(script, sandbox()).status).toBe(0);
+    });
+
+    it(`${script} exits 0 for a valid manifest that defines no gates`, () => {
+      expect(run(script, sandbox('{"name":"sb"}')).status).toBe(0);
     });
   }
+
+  for (const script of HOOKS) {
+    it(`${script} blocks with exit 2 when a gate is red`, () => {
+      // The behavior the whole harness exists for (CLAUDE.md §3), and the one with the most
+      // dangerous silent failure: flipping either hook's final `exit 2` to `exit 0` left
+      // every other spec in this file green, because none of them defined a FAILING gate.
+      const manifest = '{"name":"sb","scripts":{"typecheck":"exit 1","lint":"true"}}';
+      const { status, stderr } = run(script, sandbox(manifest));
+      expect(status, 'a red gate must block, or the Definition of Done is advisory').toBe(2);
+      expect(stderr).toMatch(/typecheck failed/);
+    }, 60_000);
+  }
+
+  it('post-edit-verify.sh runs typecheck and lint, and nothing slower', () => {
+    // The sibling hook's positive control. Without it, guarding both `has_script` calls with
+    // `false &&` — so the hook checks nothing at all — keeps every one of its specs green.
+    // Asserting the exact list also pins its documented contract: the fast pair here, the
+    // full five at the Stop gate, never test/e2e/build on every keystroke.
+    const dir = sandbox(
+      JSON.stringify({
+        name: 'sb',
+        scripts: Object.fromEntries(
+          ['typecheck', 'lint', 'test', 'e2e', 'build'].map((g) => [g, `echo ${g} >> ran.log`]),
+        ),
+      }),
+    );
+    const { status } = run('.claude/hooks/post-edit-verify.sh', dir);
+    expect(status).toBe(0);
+    expect(readFileSync(join(dir, 'ran.log'), 'utf8').trim().split('\n')).toEqual([
+      'typecheck',
+      'lint',
+    ]);
+  }, 60_000);
+
+  it('stop-gate.sh lets a hook-triggered continuation through even with no node', () => {
+    // Regression test for the deadlock this branch fixes: the stop_hook_active guard parsed
+    // stdin with node, so when node was the missing dependency the guard could never fire
+    // and the fail-closed exit 2 re-triggered the Stop hook forever. Fail closed must not
+    // mean "wedged with no way out".
+    const manifest = '{"name":"sb","scripts":{"test":"true"}}';
+    const { status } = run('.claude/hooks/stop-gate.sh', sandbox(manifest), {
+      input: '{"stop_hook_active":true}',
+      path: pathWithoutNode,
+    });
+    expect(status, 'a continuation must exit 0 or the Stop hook loops forever').toBe(0);
+  });
+
+  it('stop-gate.sh lets a hook-triggered continuation through with node present', () => {
+    // The tier the fix did NOT change, and the tier that actually runs here — node is never
+    // missing in a Node repo. The spec above pins the fallback only, so stubbing this parse
+    // to a bare "false" reinstates the original infinite loop on the production path with
+    // the whole suite still green. Both tiers need their own spec.
+    const manifest = '{"name":"sb","scripts":{"test":"exit 1"}}';
+    const { status } = run('.claude/hooks/stop-gate.sh', sandbox(manifest), {
+      input: '{"stop_hook_active":true}',
+    });
+    // The red gate is deliberate: it proves the guard returned before running anything,
+    // rather than running gates that happened to pass.
+    expect(status, 'a continuation must exit 0 or the Stop hook loops forever').toBe(0);
+  });
+
+  it('stop-gate.sh runs every gate when the toolchain is healthy', () => {
+    // The positive control. Without it, "fail closed" could be satisfied by a script that
+    // blocks unconditionally and never checks anything.
+    const dir = sandbox(
+      JSON.stringify({
+        name: 'sb',
+        scripts: Object.fromEntries(
+          ['typecheck', 'lint', 'test', 'e2e', 'build'].map((g) => [g, `echo ${g} >> ran.log`]),
+        ),
+      }),
+    );
+    const { status } = run('.claude/hooks/stop-gate.sh', dir);
+    expect(status).toBe(0);
+    expect(readFileSync(join(dir, 'ran.log'), 'utf8').trim().split('\n')).toEqual([
+      'typecheck',
+      'lint',
+      'test',
+      'e2e',
+      'build',
+    ]);
+  }, 60_000);
 });
 
-describe('hook scripts fail closed', () => {
-  const scripts = ['.claude/hooks/post-edit-verify.sh', '.claude/hooks/stop-gate.sh'];
-
-  for (const script of scripts) {
-    const source = read(script);
-
-    it(`${script} does not silently swallow a broken toolchain`, () => {
-      // The original bug: `node ... 2>/dev/null` treated "node missing" and "package.json
-      // unparseable" as "script not defined", skipping every gate and exiting 0.
-      expect(source).toContain('command -v node');
-      expect(source).not.toMatch(/scripts\?\.\[.*2>\/dev\/null/);
-    });
-
-    it(`${script} only ever blocks with exit 2`, () => {
+describe('hook scripts only block with exit 2', () => {
+  for (const script of HOOKS) {
+    it(`${script} uses no literal exit other than 0 or 2`, () => {
       // Any other non-zero status is non-blocking and never reaches the agent, so a
-      // "failure" exit that isn't 2 is indistinguishable from success.
-      const exits = [...source.matchAll(/^\s*exit (\d+)/gm)].map((m) => m[1]);
-      expect(exits.length).toBeGreaterThan(0);
-      expect(exits.every((code) => code === '0' || code === '2')).toBe(true);
+      // "failure" exit that isn't 2 is indistinguishable from success. Whole-line matching,
+      // so an indirect `exit $?` — whose status this test cannot predict — is caught too
+      // rather than slipping past a digits-only pattern.
+      const lines = [...read(script).matchAll(/^[ \t]*exit\b.*$/gm)].map((m) => m[0].trim());
+      expect(lines.length).toBeGreaterThan(0);
+      expect(lines.filter((line) => line !== 'exit 0' && line !== 'exit 2')).toEqual([]);
     });
   }
 });

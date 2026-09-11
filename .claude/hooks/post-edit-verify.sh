@@ -21,8 +21,15 @@
 # manifest will not parse, exit 2 rather than concluding "no gates are defined" — suppressing
 # those two errors is what silently skipped every gate while reporting success. An *absent*
 # package.json is a different case and exits 0: early scaffolding is not an error.
-# tests/harness.test.ts asserts the guard is present and that this script only ever exits 0 or 2.
+# tests/harness.test.ts drives this script through those cases for real, so a status bash
+# itself produces on a driven path — an unbound variable's exit 1 — turns those specs red
+# too. It also checks that no literal `exit` here uses a status other than 0 or 2. What it
+# cannot see is a lost exec bit (126), because it invokes this file as `bash <path>`; that
+# one is covered by the exec-bit assertion in the same file.
 
+# The block below is duplicated verbatim in the sibling hook rather than sourced from a shared
+# lib. Deliberate: a `source` that cannot find its lib is itself a silent-skip path, and these
+# two files are the last thing that should depend on another file being present to work.
 set -uo pipefail
 
 # Prefer CLAUDE_PROJECT_DIR; fall back to a path derived from this script's own location
@@ -32,6 +39,14 @@ set -uo pipefail
 # nothing is worse than no hook. BASH_SOURCE also covers the git-bash-on-Windows case
 # where the env var was the thing that went missing.
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+# Not reachable from an empty CLAUDE_PROJECT_DIR — `:-` above substitutes on empty as well
+# as unset. The one way this is empty is the BASH_SOURCE fallback's own `cd` failing, and
+# `cd ""` then succeeds and stays put, gating whatever the cwd happens to be.
+if [ -z "$PROJECT_DIR" ]; then
+  echo "hook: could not resolve the project root; gates NOT run." >&2
+  exit 2
+fi
 
 cd "$PROJECT_DIR" || {
   echo "hook: cannot cd to project root ($PROJECT_DIR)" >&2
@@ -51,21 +66,27 @@ OUT=""
 # if node is missing or package.json is unparseable, exit 2 rather than skipping. Why this
 # matters: the previous `has_script` swallowed both errors with 2>/dev/null and returned
 # "script not defined", so a broken package.json silently skipped every gate and reported
-# success — the same invisible no-op that the jq path was fixed to remove, just with a
-# different missing dependency.
+# success — the same invisible no-op that stop-gate.sh's jq dependency was fixed to remove,
+# just with a different missing dependency.
 if ! command -v node >/dev/null 2>&1; then
   echo "hook: node not found — gates could NOT run." >&2
   exit 2
 fi
 
-if ! SCRIPTS=$(node -e 'const s = require(process.cwd() + "/package.json").scripts || {}; process.stdout.write(Object.keys(s).join("\n"))' 2>&1); then
-  echo "hook: cannot read package.json scripts — gates NOT run:" >&2
-  echo "$SCRIPTS" >&2
+# stderr is deliberately NOT captured into $SCRIPTS: it flows straight to this hook's own
+# stderr, which is what gets fed back to Claude. Merging it with 2>&1 would append any
+# node warning onto a script name — an at-exit one onto the last, the far commoner startup
+# ExperimentalWarning onto the first — so that gate would stop being found:
+# the exact silent-skip this guard exists to remove.
+if ! SCRIPTS=$(node -e 'const s = require(process.cwd() + "/package.json").scripts || {}; process.stdout.write(Object.keys(s).join("\n"))'); then
+  echo "hook: cannot read package.json scripts (node error above) — gates NOT run." >&2
   exit 2
 fi
 
-# Exact line match against the captured list, using only builtins: no pipe (a `grep -q`
-# would close the pipe early and trip pipefail) and no extra node process per gate.
+# Exact line match against the captured list, using only builtins. Why not `npm pkg get`:
+# correct, but it spawns npm once per gate for a value already read here. Why not a pipe to
+# grep: it forks a process per lookup for a string this small, and `grep -q` closing the
+# pipe early is a pipefail hazard not worth inviting into a script that must not fail open.
 has_script () {
   case $'\n'"$SCRIPTS"$'\n' in
     *$'\n'"$1"$'\n'*) return 0 ;;
